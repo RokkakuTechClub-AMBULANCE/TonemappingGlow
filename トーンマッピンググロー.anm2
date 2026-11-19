@@ -1,5 +1,5 @@
 --label:光効果
---select@mode: モード,レイヤーにグロー効果=0, フレームバッファにレイヤーのグローを合成=1
+--select@mode: モード,レイヤーにグロー効果=0, フレームバッファにレイヤーのグローを合成=1, 閾値検出結果表示=2, 検出後ブラー表示=3
 --track@radius:半径,0,50,7.0,0.1
 --track@angle:角度,-360,360,0,0.1
 --track@exposure:露出_マスク,0,100,25.0,0.1
@@ -187,88 +187,87 @@ float4 CauchyCrossBlur(float4 pos : SV_Position): SV_Target{
 
 --合算とそれに伴う色調補正
 --[[pixelshader@ToneMapping:
+    Texture2D origin : register(t0);
+    Texture2D blurred : register(t1);
+    Texture2D OriginColorAve : register(t2);
+    Texture2D BlurredColorAve : register(t3);
 
-Texture2D origin : register(t0);
-Texture2D blurred : register(t1);
-Texture2D OriginColorAve : register(t2);
-Texture2D BlurredColorAve : register(t3);
+    SamplerState sampler0 : register(s0);
+    cbuffer constant0 : register(b0){
+        float glowStrength;
+        float middleGrey;
+        float MappingBlend;
+        float MappingBlend2;
+        float MappingMode;
+    };
+    float Luminance(float3 color){
+        return dot(color, float3(0.2126, 0.7152, 0.0722));
+    }
 
-SamplerState sampler0 : register(s0);
-cbuffer constant0 : register(b0){
-    float glowStrength;
-    float middleGrey;
-    float MappingBlend;
-    float MappingBlend2;
-    float MappingMode;
-};
-float Luminance(float3 color){
-    return dot(color, float3(0.2126, 0.7152, 0.0722));
-}
-
-//Hable式トーンマッピング
-float3 HableCurve(float3 x){
-    const float A = 0.15; // Shoulder Strength
-    const float B = 0.50; // Linear Strength
-    const float C = 0.10; // Linear Angle
-    const float D = 0.20; // Toe Strength
-    const float E = 0.02; // Toe Numerator
-    const float F = 0.30; // Toe Denominator
-    return ((x*(A*x+C*B)+D*E) / (x*(A*x+B)+D*F)) - E/F;
-}
-
-//余裕があれば他のカーブも入れたい
-float3 ToneMap(float3 color, float whitePoint, float blend){
-    
-        float3 mapped = HableCurve(color);
-        float3 white =  HableCurve(float3(whitePoint,whitePoint,whitePoint));
-        float3 result = mapped / white;
-        return lerp(color, result, blend);   
-}
-float3 ToneMap2(float3 color,float whitePoint, float blend){
-        float lum_origin = dot(color, float3(0.2126, 0.7152, 0.0722));
-        float lum = lum_origin * (11.2/2.0);
+    //Hable式トーンマッピング
+    float3 HableCurve(float3 x){
         const float A = 0.15; // Shoulder Strength
         const float B = 0.50; // Linear Strength
         const float C = 0.10; // Linear Angle
         const float D = 0.20; // Toe Strength
         const float E = 0.02; // Toe Numerator
         const float F = 0.30; // Toe Denominator
-        float mappedLum = ((lum*(A*lum+C*B)+D*E) / (lum*(A*lum+B)+D*F)) - E/F;
-        float whiteScale = ((whitePoint*(A*whitePoint+C*B)+D*E) / (whitePoint*(A*whitePoint+B)+D*F)) - E/F;
-        float3 result = color *(mappedLum / whiteScale);
-        return lerp(color,result, blend);
-}
-float4 ToneMapping(float4 pos : SV_Position): SV_Target{
-    uint w, h;
-    origin.GetDimensions(w,h);
-    float2 texelSize = float2(1.0/w, 1.0/h);
-    float2 uv = pos.xy * texelSize;
-    float4 Origin = origin.Sample(sampler0,uv);
-    float4 Glow = blurred.Sample(sampler0, uv);
-    float4 AveOrigin = OriginColorAve.Sample(sampler0,uv);
-    float4 AveGlow = BlurredColorAve.Sample(sampler0,uv);
+        return ((x*(A*x+C*B)+D*E) / (x*(A*x+B)+D*F)) - E/F;
+    }
 
-    float whitePoint = 11.2;
+    //余裕があれば他のカーブも入れたい
+    float3 ToneMap(float3 color, float whitePoint, float blend){
+        
+            float3 mapped = HableCurve(color);
+            float3 white =  HableCurve(float3(whitePoint,whitePoint,whitePoint));
+            float3 result = mapped / white;
+            return lerp(color, result, blend);   
+    }
+    float3 ToneMap2(float3 color,float whitePoint, float blend){
+            float lum_origin = dot(color, float3(0.2126, 0.7152, 0.0722));
+            float lum = lum_origin * (11.2/2.0);
+            const float A = 0.15; // Shoulder Strength
+            const float B = 0.50; // Linear Strength
+            const float C = 0.10; // Linear Angle
+            const float D = 0.20; // Toe Strength
+            const float E = 0.02; // Toe Numerator
+            const float F = 0.30; // Toe Denominator
+            float mappedLum = ((lum*(A*lum+C*B)+D*E) / (lum*(A*lum+B)+D*F)) - E/F;
+            float whiteScale = ((whitePoint*(A*whitePoint+C*B)+D*E) / (whitePoint*(A*whitePoint+B)+D*F)) - E/F;
+            float3 result = color *(mappedLum / whiteScale);
+            return lerp(color,result, blend);
+    }
+    float4 ToneMapping(float4 pos : SV_Position): SV_Target{
+        uint w, h;
+        origin.GetDimensions(w,h);
+        float2 texelSize = float2(1.0/w, 1.0/h);
+        float2 uv = pos.xy * texelSize;
+        float4 Origin = origin.Sample(sampler0,uv);
+        float3 Glow = blurred.Sample(sampler0, uv).rgb;
+        float4 AveOrigin = OriginColorAve.Sample(sampler0,uv);
+        float4 AveGlow = BlurredColorAve.Sample(sampler0,uv);
 
-//グローを合成　モードで加算とスクリーンを切り替える
-    float4 hdr;
-    if (MappingMode<1)hdr = Origin + Glow * glowStrength * max((1 - Origin*MappingMode),0);
-    else hdr = float4(Origin + Glow * glowStrength * pow(max((1 - Origin),0),MappingMode));
+        float whitePoint = 11.2;
 
-//シーン全体の輝度を測る
-    float avgLumSrc = Luminance(AveOrigin.rgb);
-    float avgLumGlow = Luminance(AveGlow.rgb);
-    float avgLum = avgLumSrc + avgLumGlow;
-    avgLum = max(avgLum, 0.0001);
+    //グローを合成　モードで加算とスクリーンを切り替える
+        float3 hdr;
+        if (MappingMode<1)hdr = Origin.rgb + Glow * glowStrength * max((1 - Origin.rgb*MappingMode),0);
+        else hdr = Origin.rgb + Glow * glowStrength * pow(max((1 - Origin.rgb),0),MappingMode);
 
-//露出補正　Reinhard式キー値
-    float exposure = middleGrey / avgLum;
-    float3 exposed = hdr.rgb * exposure;
-    float3 tonemapped = ToneMap(exposed, whitePoint, MappingBlend);
-    float3 tonemapped2 = ToneMap2(tonemapped,whitePoint, MappingBlend2);
+    //シーン全体の輝度を測る
+        float avgLumSrc = Luminance(AveOrigin.rgb);
+        float avgLumGlow = Luminance(AveGlow.rgb);
+        float avgLum = avgLumSrc + avgLumGlow;
+        avgLum = max(avgLum, 0.0001);
 
-    return float4(tonemapped2,saturate(hdr.a));
-}
+    //露出補正　Reinhard式キー値
+        float exposure = middleGrey / avgLum;
+        float3 exposed = hdr * exposure;
+        float3 tonemapped = ToneMap(exposed, whitePoint, MappingBlend);
+        float3 tonemapped2 = ToneMap2(tonemapped,whitePoint, MappingBlend2);
+
+        return float4(tonemapped2, Origin.a);
+    }
 ]]
 -- RGB → HSV
 local function RGBtoHSV(r, g, b)
@@ -341,16 +340,20 @@ obj.effect("オフスクリーン描画")
 obj.copybuffer("cache:original","object") --cache:original::元画像
 obj.copybuffer("tempbuffer","cache:original")
 obj.pixelshader("MaskFilter","object",{"object"},{exposure / 100,threshold / 100,smoothness / 100,gamma,bias,r/255,g/255,b/255},"copy","clip")
-obj.effect("リサイズ","拡大率",50)
-obj.copybuffer("tempbuffer","object")
-obj.pixelshader("CauchyBlur","object",{"object"},{radius,angle},"copy","clip")
-obj.copybuffer("tempbuffer","object")
-obj.pixelshader("CauchyBlur","object",{"object"},{radius, angle + 60},"copy","clip")
-obj.copybuffer("tempbuffer","object")
-obj.pixelshader("CauchyBlur","object",{"object"},{radius, angle - 60},"copy","clip")
-obj.copybuffer("tempbuffer","object")
-obj.pixelshader("CauchyCrossBlur","object",{"object"},{radius_cross, angle, biim, strength, angle_All, radius_core},"copy","clamp")
-obj.effect("リサイズ","拡大率",200)
+
+if mode ~=2 then
+    obj.effect("リサイズ","拡大率",50)
+    obj.copybuffer("tempbuffer","object")
+    obj.pixelshader("CauchyBlur","object",{"object"},{radius,angle},"copy","clip")
+    obj.copybuffer("tempbuffer","object")
+    obj.pixelshader("CauchyBlur","object",{"object"},{radius, angle + 60},"copy","clip")
+    obj.copybuffer("tempbuffer","object")
+    obj.pixelshader("CauchyBlur","object",{"object"},{radius, angle - 60},"copy","clip")
+    obj.copybuffer("tempbuffer","object")
+    obj.pixelshader("CauchyCrossBlur","object",{"object"},{radius_cross, angle, biim, strength, angle_All, radius_core},"copy","clamp")
+    obj.effect("リサイズ","拡大率",200)
+end
+
 
 obj.copybuffer("cache:blurred","object") --cache:blurred::閾値処理後のぼかしが終わった後
 
