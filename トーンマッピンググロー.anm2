@@ -156,8 +156,8 @@ float4 CauchyCrossBlur(float4 pos : SV_Position): SV_Target{
             float2 sampleUV = uv + offset;
             float inside = (all(sampleUV >= 0.0) && all(sampleUV <= 1.0)) ? 1.0 : 0.0;
             float dist = abs(float(x))/radius_cross;
-            float weight = pow((dist * dist + 1.0), -1.5) * inside;
-            float4 sampleCol = tempbuffer.Sample(sampler0, sampleUV) * weight;
+            float weight = 1.0 / (dist * dist + 1.0) * (1.0 - dist * dist);
+            float4 sampleCol = tempbuffer.Sample(sampler0, sampleUV) * weight * inside;
             result = max(sampleCol, result);
         }
     }
@@ -177,7 +177,7 @@ float4 CauchyCrossBlur(float4 pos : SV_Position): SV_Target{
             }
         }
         float4 resultCore = sampleMax * radius_core / 5.0;
-        result = 1.0 - (1.0 - result) * (1.0 - resultCore);
+        result = 1.0 - max((1.0 - result), 0) * max((1.0 - resultCore), 0);
     }
     result.rgb *= (1 + strength / 10);
 
