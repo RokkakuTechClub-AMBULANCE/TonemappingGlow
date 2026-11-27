@@ -108,7 +108,7 @@ float4 CauchyBlur(float4 pos : SV_Position): SV_Target{
         float2 sampleUV = uv + offset;
         float inside = (all(sampleUV >= 0.0) && all(sampleUV <= 1.0)) ? 1.0 : 0.0;
         float dist = abs(float(i))/radius;
-        float weight = 1.0 / (dist * dist + 1.0)*inside;
+        float weight = pow((dist * dist + 1.0), -1.5) * inside;
         result += tempbuffer.Sample(sampler0, sampleUV) * weight;
         totalW += weight;
     }
